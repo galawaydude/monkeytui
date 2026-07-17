@@ -17,7 +17,7 @@ Examples:
 - `docs: add install instructions`
 
 One commit per milestone, pushed immediately after. Body optional — add only
-when the summary can't carry the why.
+when the summary can't carry the why. No trailers, no co-authors.
 
 ## Project structure
 

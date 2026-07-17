@@ -1,5 +1,5 @@
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
@@ -22,7 +22,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         header,
     );
 
-    let text_area = center(body, Constraint::Percentage(70), Constraint::Length(3));
+    let text_area = center(body, Constraint::Percentage(70), Constraint::Length(6));
     frame.render_widget(typing_text(app), text_area);
 
     frame.render_widget(
@@ -35,10 +35,23 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
 fn typing_text(app: &App) -> Paragraph<'_> {
     let t = app.theme();
+    let cursor = app.typed.len();
     let spans: Vec<Span> = app
         .target
         .iter()
-        .map(|&c| Span::styled(c.to_string(), Style::new().fg(t.dim)))
+        .enumerate()
+        .map(|(i, &c)| {
+            let mut style = match app.typed.get(i) {
+                Some(&typed) if typed == c => Style::new().fg(t.correct),
+                // wrong char: show what the target expected, marked red
+                Some(_) => Style::new().fg(t.wrong).crossed_out(),
+                None => Style::new().fg(t.dim),
+            };
+            if i == cursor {
+                style = style.fg(t.fg).underlined();
+            }
+            Span::styled(c.to_string(), style)
+        })
         .collect();
     Paragraph::new(Line::from(spans)).wrap(ratatui::widgets::Wrap { trim: true })
 }
