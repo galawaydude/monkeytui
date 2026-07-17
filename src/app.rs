@@ -30,6 +30,8 @@ pub struct App {
     started_at: Option<Instant>,
     /// frozen at test end so results don't drift
     final_elapsed: Duration,
+    /// wpm recorded once per second, for the results sparkline
+    pub wpm_samples: Vec<u64>,
 }
 
 impl App {
@@ -45,6 +47,7 @@ impl App {
             duration: Duration::from_secs(30),
             started_at: None,
             final_elapsed: Duration::ZERO,
+            wpm_samples: Vec::new(),
         }
     }
 
@@ -60,6 +63,7 @@ impl App {
         self.phase = Phase::Idle;
         self.started_at = None;
         self.final_elapsed = Duration::ZERO;
+        self.wpm_samples.clear();
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -73,19 +77,49 @@ impl App {
         self.duration.saturating_sub(self.elapsed()).as_secs()
     }
 
-    /// monkeytype-style: correct chars / 5, per minute
+    /// word boundaries in target as (start, end) char ranges, end exclusive
+    fn word_ranges(&self) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let mut start = 0;
+        for (i, &c) in self.target.iter().enumerate() {
+            if c == ' ' {
+                ranges.push((start, i));
+                start = i + 1;
+            }
+        }
+        ranges.push((start, self.target.len()));
+        ranges
+    }
+
+    fn word_correct(&self, start: usize, end: usize) -> bool {
+        (start..end).all(|i| self.typed.get(i) == Some(&self.target[i]))
+    }
+
+    /// monkeytype-style: only chars in fully-correct words count (plus their space)
     pub fn wpm(&self) -> f64 {
         let mins = self.elapsed().as_secs_f64() / 60.0;
         if mins == 0.0 {
             return 0.0;
         }
-        let correct = self
-            .typed
+        let cursor = self.typed.len();
+        let mut chars = 0;
+        for (start, end) in self.word_ranges() {
+            if cursor > end && self.word_correct(start, end) {
+                chars += end - start + 1; // completed correct word + its space
+            } else if cursor >= start && cursor <= end && self.word_correct(start, cursor) {
+                chars += cursor - start; // correct-so-far prefix of the current word
+            }
+        }
+        chars as f64 / 5.0 / mins
+    }
+
+    /// completed words containing at least one wrong char
+    pub fn word_errors(&self) -> usize {
+        let cursor = self.typed.len();
+        self.word_ranges()
             .iter()
-            .zip(&self.target)
-            .filter(|(a, b)| a == b)
-            .count();
-        correct as f64 / 5.0 / mins
+            .filter(|&&(start, end)| cursor > end && !self.word_correct(start, end))
+            .count()
     }
 
     /// all typed chars / 5, per minute
@@ -107,6 +141,10 @@ impl App {
     /// called every loop iteration: end the test, top up words
     pub fn tick(&mut self) {
         if self.phase == Phase::Running {
+            let secs = self.elapsed().as_secs() as usize;
+            if secs > self.wpm_samples.len() {
+                self.wpm_samples.push(self.wpm().round() as u64);
+            }
             if self.elapsed() >= self.duration {
                 self.final_elapsed = self.duration;
                 self.phase = Phase::Done;
@@ -164,15 +202,20 @@ mod tests {
     #[test]
     fn tracks_accuracy_and_starts_clock() {
         let mut app = App::new();
-        app.target = "ab".chars().collect();
+        app.target = "ab cd".chars().collect();
         press(&mut app, 'a'); // correct
         press(&mut app, 'x'); // wrong
         assert!(app.phase == Phase::Running);
         assert_eq!(app.keystrokes, 2);
         assert_eq!(app.correct_keystrokes, 1);
         assert_eq!(app.accuracy(), 50.0);
-        // target full: further chars ignored, no panic
+        press(&mut app, ' '); // completes the flawed first word
+        assert_eq!(app.word_errors(), 1);
+        // fill target: further chars ignored, no panic
+        press(&mut app, 'c');
+        press(&mut app, 'd');
         press(&mut app, 'y');
-        assert_eq!(app.keystrokes, 2);
+        assert_eq!(app.keystrokes, 5);
+        assert_eq!(app.word_errors(), 1); // "cd" typed correctly
     }
 }
