@@ -21,6 +21,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Line::from(" monkeytui ").style(Style::new().fg(t.accent).add_modifier(ratatui::style::Modifier::BOLD)),
         header,
     );
+    frame.render_widget(
+        Line::from(format!("{} ", t.name))
+            .style(Style::new().fg(t.dim))
+            .right_aligned(),
+        header,
+    );
 
     match app.phase {
         Phase::Done => draw_results(frame, app, body),
@@ -28,9 +34,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 
     let help = match app.phase {
-        Phase::Idle => " 1-4 time (15/30/60/120) · tab restart · esc quit ",
+        Phase::Idle => " 1-4 time (15/30/60/120) · ctrl+t theme · tab restart · esc quit ",
         Phase::Running => " tab restart · esc quit ",
-        Phase::Done => " tab next test · esc quit ",
+        Phase::Done => " tab next test · ctrl+t theme · esc quit ",
     };
     frame.render_widget(
         Line::from(help).style(Style::new().fg(t.dim)).centered(),

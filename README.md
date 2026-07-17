@@ -27,10 +27,16 @@ monkeytui
 
 ## Keys
 
-| Key   | Action        |
-|-------|---------------|
-| `tab` | restart test  |
-| `esc` | quit          |
+| Key      | Action                                      |
+|----------|---------------------------------------------|
+| `1`-`4`  | test duration 15/30/60/120s (before typing) |
+| `ctrl+t` | cycle theme                                 |
+| `tab`    | restart / next test                         |
+| `esc`    | quit                                        |
+
+## Themes
+
+catppuccin (default) · gruvbox · dracula · nord · tokyonight · light
 
 ## Structure
 

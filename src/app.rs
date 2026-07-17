@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::theme::{Theme, THEMES};
 use crate::words;
@@ -120,6 +120,12 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if key.code == KeyCode::Char('t') {
+                self.theme_idx = (self.theme_idx + 1) % THEMES.len();
+            }
+            return;
+        }
         match key.code {
             KeyCode::Esc => self.running = false,
             KeyCode::Tab => self.restart(),
