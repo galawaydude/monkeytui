@@ -1,7 +1,8 @@
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
+use ratatui::symbols;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, LineGauge, Paragraph, Sparkline, Wrap};
+use ratatui::widgets::{Axis, Block, Chart, Dataset, GraphType, LineGauge, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, Phase};
@@ -46,11 +47,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
 fn draw_test(frame: &mut Frame, app: &App, body: Rect) {
     let t = app.theme();
-    let area = center(body, Constraint::Percentage(70), Constraint::Length(8));
+    let area = center(body, Constraint::Percentage(60), Constraint::Length(8));
     let [status, _, text_area] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Fill(1),
+        Constraint::Length(2),
+        Constraint::Length(5),
     ])
     .areas(area);
 
@@ -84,86 +85,128 @@ fn draw_test(frame: &mut Frame, app: &App, body: Rect) {
             );
         }
     }
-    frame.render_widget(typing_text(app), text_area);
+    frame.render_widget(typing_text(app, text_area.width as usize), text_area);
 }
 
 fn draw_results(frame: &mut Frame, app: &App, body: Rect) {
     let t = app.theme();
-    let area = center(body, Constraint::Length(40), Constraint::Length(12));
-    let [stats_area, spark_area] =
-        Layout::vertical([Constraint::Length(7), Constraint::Length(5)]).areas(area);
-    let big = Style::new().fg(t.accent).add_modifier(ratatui::style::Modifier::BOLD);
+    let area = center(body, Constraint::Length(70), Constraint::Length(11));
+    let [stats_area, _, chart_area] = Layout::horizontal([
+        Constraint::Length(16),
+        Constraint::Length(4),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
     let dim = Style::new().fg(t.dim);
     let fg = Style::new().fg(t.fg);
 
     let lines = vec![
-        Line::from(vec![
-            Span::styled("wpm    ", dim),
-            Span::styled(format!("{:.0}", app.wpm()), big),
-        ]),
+        Line::from(Span::styled("wpm", dim)),
+        Line::from(Span::styled(
+            format!("{:.0}", app.wpm()),
+            Style::new().fg(t.accent).add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("acc    ", dim),
-            Span::styled(format!("{:.0}%", app.accuracy()), fg),
-        ]),
+        Line::from(Span::styled("acc", dim)),
+        Line::from(Span::styled(format!("{:.0}%", app.accuracy()), fg)),
+        Line::from(""),
         Line::from(vec![
             Span::styled("raw    ", dim),
             Span::styled(format!("{:.0}", app.raw_wpm()), fg),
         ]),
         Line::from(vec![
             Span::styled("errors ", dim),
-            Span::styled(format!("{} words", app.word_errors()), fg),
+            Span::styled(format!("{}w", app.word_errors()), fg),
         ]),
         Line::from(vec![
             Span::styled("time   ", dim),
             Span::styled(format!("{}s", app.duration.as_secs()), fg),
         ]),
     ];
-    frame.render_widget(Paragraph::new(lines).centered(), stats_area);
+    frame.render_widget(Paragraph::new(lines), stats_area);
 
     if app.wpm_samples.len() > 1 {
+        let points: Vec<(f64, f64)> = app
+            .wpm_samples
+            .iter()
+            .enumerate()
+            .map(|(i, &w)| (i as f64, w as f64))
+            .collect();
+        let max = app.wpm_samples.iter().max().copied().unwrap_or(1).max(1) as f64;
+        let dataset = Dataset::default()
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::new().fg(t.accent))
+            .data(&points);
         frame.render_widget(
-            Sparkline::default()
-                .data(&app.wpm_samples)
-                .style(Style::new().fg(t.accent)),
-            spark_area,
+            Chart::new(vec![dataset])
+                .x_axis(Axis::default().bounds([0.0, (points.len() - 1) as f64]))
+                .y_axis(
+                    Axis::default()
+                        .bounds([0.0, max * 1.1])
+                        .labels([Span::styled("0", dim), Span::styled(format!("{max:.0}"), dim)]),
+                ),
+            chart_area,
         );
     }
 }
 
-fn typing_text(app: &App) -> Paragraph<'_> {
+/// monkeytype-style text: words wrapped by hand with double-space gaps,
+/// blank line between rows, windowed to 3 rows around the cursor
+fn typing_text(app: &App, width: usize) -> Paragraph<'_> {
     let t = app.theme();
     let cursor = app.typed.len();
-    // current word bounds, for the bold highlight
-    let word_start = app.target[..cursor]
-        .iter()
-        .rposition(|&c| c == ' ')
-        .map_or(0, |i| i + 1);
-    let word_end = app.target[cursor..]
-        .iter()
-        .position(|&c| c == ' ')
-        .map_or(app.target.len(), |i| cursor + i);
-    let spans: Vec<Span> = app
-        .target
-        .iter()
-        .enumerate()
-        .map(|(i, &c)| {
-            let mut style = match app.typed.get(i) {
-                Some(&typed) if typed == c => Style::new().fg(t.correct),
-                // wrong char: show what the target expected, marked red
-                Some(_) => Style::new().fg(t.wrong).add_modifier(ratatui::style::Modifier::CROSSED_OUT),
-                None => Style::new().fg(t.dim),
-            };
-            if (word_start..word_end).contains(&i) {
-                style = style.add_modifier(ratatui::style::Modifier::BOLD);
-            }
-            if i == cursor {
-                style = style.fg(t.fg).add_modifier(ratatui::style::Modifier::UNDERLINED);
-            }
-            Span::styled(c.to_string(), style)
-        })
-        .collect();
-    Paragraph::new(Line::from(spans)).wrap(Wrap { trim: true })
+    let width = width.saturating_sub(2).max(10);
+
+    let style_at = |i: usize, current_word: bool| {
+        let mut style = match app.typed.get(i) {
+            Some(&typed) if typed == app.target[i] => Style::new().fg(t.correct),
+            // wrong char: show what the target expected, marked red
+            Some(_) => Style::new().fg(t.wrong).add_modifier(Modifier::CROSSED_OUT),
+            None => Style::new().fg(t.dim),
+        };
+        if current_word {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        if i == cursor {
+            style = style.fg(t.fg).add_modifier(Modifier::UNDERLINED);
+        }
+        style
+    };
+
+    let mut rows: Vec<Vec<Span>> = vec![Vec::new()];
+    let mut row_width = 0;
+    let mut cursor_row = 0;
+    for (start, end) in app.word_ranges() {
+        let word_len = end - start;
+        if row_width > 0 && row_width + word_len > width {
+            rows.push(Vec::new());
+            row_width = 0;
+        }
+        let current_word = cursor >= start && cursor <= end;
+        if current_word {
+            cursor_row = rows.len() - 1;
+        }
+        let row = rows.last_mut().unwrap();
+        for i in start..end {
+            row.push(Span::styled(app.target[i].to_string(), style_at(i, current_word)));
+        }
+        if end < app.target.len() {
+            row.push(Span::styled(" ", style_at(end, false))); // the real, typeable space
+            row.push(Span::raw(" ")); // visual-only gap
+        }
+        row_width += word_len + 2;
+    }
+
+    let first = cursor_row.saturating_sub(1);
+    let mut lines = Vec::new();
+    for spans in rows.into_iter().skip(first).take(3) {
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        lines.push(Line::from(spans));
+    }
+    Paragraph::new(lines)
 }
 
 fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {

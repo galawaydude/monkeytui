@@ -78,7 +78,7 @@ impl App {
     }
 
     /// word boundaries in target as (start, end) char ranges, end exclusive
-    fn word_ranges(&self) -> Vec<(usize, usize)> {
+    pub fn word_ranges(&self) -> Vec<(usize, usize)> {
         let mut ranges = Vec::new();
         let mut start = 0;
         for (i, &c) in self.target.iter().enumerate() {
