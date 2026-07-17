@@ -23,6 +23,7 @@ fn main() -> std::io::Result<()> {
                 }
             }
         }
+        app.tick();
     }
 
     ratatui::restore();
