@@ -90,65 +90,136 @@ fn draw_test(frame: &mut Frame, app: &App, body: Rect) {
 
 fn draw_results(frame: &mut Frame, app: &App, body: Rect) {
     let t = app.theme();
-    let area = center(body, Constraint::Length(70), Constraint::Length(11));
-    let [stats_area, _, chart_area] = Layout::horizontal([
-        Constraint::Length(16),
-        Constraint::Length(4),
-        Constraint::Fill(1),
-    ])
-    .areas(area);
     let dim = Style::new().fg(t.dim);
     let fg = Style::new().fg(t.fg);
+    let big = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
 
-    let lines = vec![
-        Line::from(Span::styled("wpm", dim)),
-        Line::from(Span::styled(
-            format!("{:.0}", app.wpm()),
-            Style::new().fg(t.accent).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(Span::styled("acc", dim)),
-        Line::from(Span::styled(format!("{:.0}%", app.accuracy()), fg)),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("raw    ", dim),
-            Span::styled(format!("{:.0}", app.raw_wpm()), fg),
+    let area = center(body, Constraint::Percentage(85), Constraint::Length(16));
+    let [top, _, bottom] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(2),
+    ])
+    .areas(area);
+    let [left, chart_area] =
+        Layout::horizontal([Constraint::Length(10), Constraint::Fill(1)]).areas(top);
+
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled("wpm", dim)),
+            Line::from(Span::styled(format!("{:.0}", app.wpm()), big)),
+            Line::from(""),
+            Line::from(Span::styled("acc", dim)),
+            Line::from(Span::styled(format!("{:.0}%", app.accuracy()), big)),
         ]),
-        Line::from(vec![
-            Span::styled("errors ", dim),
-            Span::styled(format!("{}w", app.word_errors()), fg),
-        ]),
-        Line::from(vec![
-            Span::styled("time   ", dim),
-            Span::styled(format!("{}s", app.duration.as_secs()), fg),
-        ]),
+        left,
+    );
+
+    // bottom stat row, monkeytype-style
+    let stats: [(&str, String); 5] = [
+        ("test type", format!("time {}\nenglish", app.duration.as_secs())),
+        ("raw", format!("{:.0}", app.raw_wpm())),
+        (
+            "characters",
+            format!(
+                "{}/{}",
+                app.correct_keystrokes,
+                app.keystrokes - app.correct_keystrokes
+            ),
+        ),
+        ("consistency", format!("{:.0}%", app.consistency())),
+        ("time", format!("{}s", app.duration.as_secs())),
     ];
-    frame.render_widget(Paragraph::new(lines), stats_area);
+    let cols = Layout::horizontal([Constraint::Fill(1); 5]).split(bottom);
+    for (i, (label, value)) in stats.iter().enumerate() {
+        let mut lines = vec![Line::from(Span::styled(*label, dim))];
+        for part in value.split('\n') {
+            lines.push(Line::from(Span::styled(part.to_string(), fg)));
+        }
+        frame.render_widget(Paragraph::new(lines), cols[i]);
+    }
 
     if app.wpm_samples.len() > 1 {
-        let points: Vec<(f64, f64)> = app
-            .wpm_samples
+        draw_chart(frame, app, chart_area);
+    }
+}
+
+/// wpm (accent) + raw (dim) lines, error dots on the raw line where mistakes happened
+fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
+    let t = app.theme();
+    let dim = Style::new().fg(t.dim);
+    let as_points = |samples: &[u64]| -> Vec<(f64, f64)> {
+        samples
             .iter()
             .enumerate()
-            .map(|(i, &w)| (i as f64, w as f64))
-            .collect();
-        let max = app.wpm_samples.iter().max().copied().unwrap_or(1).max(1) as f64;
-        let dataset = Dataset::default()
+            .map(|(i, &w)| ((i + 1) as f64, w as f64))
+            .collect()
+    };
+    let wpm_points = as_points(&app.wpm_samples);
+    let raw_points = as_points(&app.raw_samples);
+    let error_points: Vec<(f64, f64)> = app
+        .errors_per_sec
+        .iter()
+        .enumerate()
+        .filter(|&(_, &e)| e > 0)
+        .map(|(sec, _)| {
+            let y = app.raw_samples.get(sec).copied().unwrap_or(0) as f64;
+            ((sec + 1) as f64, y)
+        })
+        .collect();
+
+    let max = raw_points
+        .iter()
+        .chain(&wpm_points)
+        .map(|&(_, y)| y)
+        .fold(1.0, f64::max);
+    let n = wpm_points.len() as f64;
+
+    let datasets = vec![
+        Dataset::default()
+            .name("raw")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(dim)
+            .data(&raw_points),
+        Dataset::default()
+            .name("wpm")
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::new().fg(t.accent))
-            .data(&points);
-        frame.render_widget(
-            Chart::new(vec![dataset])
-                .x_axis(Axis::default().bounds([0.0, (points.len() - 1) as f64]))
-                .y_axis(
-                    Axis::default()
-                        .bounds([0.0, max * 1.1])
-                        .labels([Span::styled("0", dim), Span::styled(format!("{max:.0}"), dim)]),
-                ),
-            chart_area,
-        );
-    }
+            .data(&wpm_points),
+        Dataset::default()
+            .name("err")
+            .marker(symbols::Marker::Dot)
+            .graph_type(GraphType::Scatter)
+            .style(Style::new().fg(t.wrong))
+            .data(&error_points),
+    ];
+
+    frame.render_widget(
+        Chart::new(datasets)
+            .x_axis(
+                Axis::default()
+                    .bounds([1.0, n])
+                    .labels([
+                        Span::styled("1", dim),
+                        Span::styled(format!("{:.0}", (n / 2.0).ceil()), dim),
+                        Span::styled(format!("{n:.0}"), dim),
+                    ])
+                    .style(dim),
+            )
+            .y_axis(
+                Axis::default()
+                    .bounds([0.0, max * 1.1])
+                    .labels([
+                        Span::styled("0", dim),
+                        Span::styled(format!("{:.0}", max / 2.0), dim),
+                        Span::styled(format!("{max:.0}"), dim),
+                    ])
+                    .style(dim),
+            ),
+        area,
+    );
 }
 
 /// monkeytype-style text: words wrapped by hand with double-space gaps,

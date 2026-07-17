@@ -32,6 +32,17 @@ pub struct App {
     final_elapsed: Duration,
     /// wpm recorded once per second, for the results sparkline
     pub wpm_samples: Vec<u64>,
+    pub raw_samples: Vec<u64>,
+    /// keystrokes / errors bucketed by elapsed second
+    pub keys_per_sec: Vec<u32>,
+    pub errors_per_sec: Vec<u32>,
+}
+
+fn bump(buckets: &mut Vec<u32>, sec: usize) {
+    if buckets.len() <= sec {
+        buckets.resize(sec + 1, 0);
+    }
+    buckets[sec] += 1;
 }
 
 impl App {
@@ -48,6 +59,9 @@ impl App {
             started_at: None,
             final_elapsed: Duration::ZERO,
             wpm_samples: Vec::new(),
+            raw_samples: Vec::new(),
+            keys_per_sec: Vec::new(),
+            errors_per_sec: Vec::new(),
         }
     }
 
@@ -64,6 +78,9 @@ impl App {
         self.started_at = None;
         self.final_elapsed = Duration::ZERO;
         self.wpm_samples.clear();
+        self.raw_samples.clear();
+        self.keys_per_sec.clear();
+        self.errors_per_sec.clear();
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -131,6 +148,25 @@ impl App {
         self.keystrokes as f64 / 5.0 / mins
     }
 
+    /// 100% = perfectly even typing rate; based on per-second keystroke variance
+    pub fn consistency(&self) -> f64 {
+        let n = self.keys_per_sec.len();
+        if n < 2 {
+            return 100.0;
+        }
+        let mean = self.keys_per_sec.iter().sum::<u32>() as f64 / n as f64;
+        if mean == 0.0 {
+            return 0.0;
+        }
+        let var = self
+            .keys_per_sec
+            .iter()
+            .map(|&k| (k as f64 - mean).powi(2))
+            .sum::<f64>()
+            / n as f64;
+        (1.0 - var.sqrt() / mean).clamp(0.0, 1.0) * 100.0
+    }
+
     pub fn accuracy(&self) -> f64 {
         if self.keystrokes == 0 {
             return 100.0;
@@ -144,6 +180,7 @@ impl App {
             let secs = self.elapsed().as_secs() as usize;
             if secs > self.wpm_samples.len() {
                 self.wpm_samples.push(self.wpm().round() as u64);
+                self.raw_samples.push(self.raw_wpm().round() as u64);
             }
             if self.elapsed() >= self.duration {
                 self.final_elapsed = self.duration;
@@ -181,8 +218,12 @@ impl App {
                 }
                 self.typed.push(c);
                 self.keystrokes += 1;
+                let sec = self.elapsed().as_secs() as usize;
+                bump(&mut self.keys_per_sec, sec);
                 if c == self.target[self.typed.len() - 1] {
                     self.correct_keystrokes += 1;
+                } else {
+                    bump(&mut self.errors_per_sec, sec);
                 }
             }
             _ => {}
