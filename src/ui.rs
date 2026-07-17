@@ -201,8 +201,8 @@ fn draw_results(frame: &mut Frame, app: &App, body: Rect) {
                 app.keystrokes - app.correct_keystrokes
             ),
         ),
+        ("errors", format!("{} words", app.word_errors())),
         ("consistency", format!("{:.0}%", app.consistency())),
-        ("time", format!("{}s", app.duration.as_secs())),
     ];
     let cols = Layout::horizontal([Constraint::Fill(1); 5]).split(bottom);
     for (i, (label, value)) in stats.iter().enumerate() {
