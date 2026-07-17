@@ -3,11 +3,12 @@ use ratatui::style::Color;
 pub struct Theme {
     pub name: &'static str,
     pub bg: Color,
+    /// typed / live content
     pub fg: Color,
-    /// untyped text
+    /// labels, untyped text, everything by default
     pub dim: Color,
-    pub correct: Color,
     pub wrong: Color,
+    /// one hero element per screen
     pub accent: Color,
 }
 
@@ -21,7 +22,6 @@ pub const THEMES: &[Theme] = &[
         bg: rgb(0x11111b),
         fg: rgb(0xcdd6f4),
         dim: rgb(0x585b70),
-        correct: rgb(0xa6e3a1),
         wrong: rgb(0xf38ba8),
         accent: rgb(0xfab387),
     },
@@ -30,7 +30,6 @@ pub const THEMES: &[Theme] = &[
         bg: rgb(0x282828),
         fg: rgb(0xebdbb2),
         dim: rgb(0x665c54),
-        correct: rgb(0xb8bb26),
         wrong: rgb(0xfb4934),
         accent: rgb(0xfe8019),
     },
@@ -39,7 +38,6 @@ pub const THEMES: &[Theme] = &[
         bg: rgb(0x282a36),
         fg: rgb(0xf8f8f2),
         dim: rgb(0x6272a4),
-        correct: rgb(0x50fa7b),
         wrong: rgb(0xff5555),
         accent: rgb(0xbd93f9),
     },
@@ -48,7 +46,6 @@ pub const THEMES: &[Theme] = &[
         bg: rgb(0x2e3440),
         fg: rgb(0xeceff4),
         dim: rgb(0x4c566a),
-        correct: rgb(0xa3be8c),
         wrong: rgb(0xbf616a),
         accent: rgb(0x88c0d0),
     },
@@ -57,7 +54,6 @@ pub const THEMES: &[Theme] = &[
         bg: rgb(0x1a1b26),
         fg: rgb(0xc0caf5),
         dim: rgb(0x565f89),
-        correct: rgb(0x9ece6a),
         wrong: rgb(0xf7768e),
         accent: rgb(0x7aa2f7),
     },
@@ -66,7 +62,6 @@ pub const THEMES: &[Theme] = &[
         bg: rgb(0xfafafa),
         fg: rgb(0x383a42),
         dim: rgb(0xa0a1a7),
-        correct: rgb(0x50a14f),
         wrong: rgb(0xe45649),
         accent: rgb(0xc18401),
     },
